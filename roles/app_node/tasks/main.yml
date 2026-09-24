@@ -11,6 +11,12 @@
     dest: "/opt/apps/{{ app_name }}/docker-compose.yml"
     mode: '0644'
 
+- name: Template environment variables
+  template:
+    src: .env.j2
+    dest: "/opt/apps/{{ app_name }}/.env"
+    mode: '0600'
+
 - name: Allow HTTP through UFW
   ufw:
     rule: allow

@@ -28,3 +28,13 @@
     rule: allow
     port: '443'
     proto: tcp
+
+- name: Pull latest Docker images
+  command: docker compose pull
+  args:
+    chdir: "/opt/apps/{{ app_name }}"
+
+- name: Start Docker Compose stack
+  command: docker compose up -d --remove-orphans
+  args:
+    chdir: "/opt/apps/{{ app_name }}"

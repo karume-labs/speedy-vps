@@ -81,3 +81,18 @@
     minute: "0"
     hour: "2"
     job: "/root/db_backup.sh >> /var/log/db_backup.log 2>&1"
+
+- name: Configure log rotation for database backups
+  copy:
+    dest: /etc/logrotate.d/db_backup
+    content: |
+      /var/log/db_backup.log {
+          weekly
+          rotate 4
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 640 root root
+      }
+    mode: '0644'

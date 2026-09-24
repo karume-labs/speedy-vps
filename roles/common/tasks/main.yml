@@ -1,0 +1,39 @@
+---
+- name: Update apt cache and upgrade packages
+  apt:
+    update_cache: yes
+    upgrade: yes
+
+- name: Install essential packages
+  apt:
+    name:
+      - curl
+      - git
+      - htop
+      - ufw
+      - fail2ban
+    state: present
+
+- name: Allow SSH through UFW
+  ufw:
+    rule: allow
+    name: OpenSSH
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+    policy: deny
+
+- name: Disable root password authentication
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication no'
+  notify: Restart SSH
+
+- name: Ensure SSH key login is enabled
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PubkeyAuthentication'
+    line: 'PubkeyAuthentication yes'
+  notify: Restart SSH

@@ -1,0 +1,24 @@
+---
+- name: Create project directory dynamically
+  file:
+    path: "/opt/apps/{{ app_name }}"
+    state: directory
+    mode: '0755'
+
+- name: Template dynamic docker-compose.yml with Traefik
+  template:
+    src: docker-compose.yml.j2
+    dest: "/opt/apps/{{ app_name }}/docker-compose.yml"
+    mode: '0644'
+
+- name: Allow HTTP through UFW
+  ufw:
+    rule: allow
+    port: '80'
+    proto: tcp
+
+- name: Allow HTTPS through UFW
+  ufw:
+    rule: allow
+    port: '443'
+    proto: tcp

@@ -1,0 +1,6 @@
+---
+- name: Setup DB Nodes
+  hosts: db_nodes
+  become: yes
+  roles:
+    - ../roles/db_node

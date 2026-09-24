@@ -1,0 +1,12 @@
+---
+- name: Allow database port from App Nodes only
+  ufw:
+    rule: allow
+    port: '5432'
+    proto: tcp
+    src: "{{ hostvars[item]['ansible_host'] }}"
+  loop: "{{ groups['app_nodes'] | default([]) }}"
+  when: hostvars[item]['ansible_host'] is defined
+
+# Add Postgres/MySQL installation tasks here
+# Add Backup script tasks here

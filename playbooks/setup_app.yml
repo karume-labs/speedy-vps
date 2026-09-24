@@ -1,0 +1,7 @@
+---
+- name: Setup App Nodes
+  hosts: app_nodes
+  become: yes
+  roles:
+    - ../roles/docker
+    - ../roles/app_node

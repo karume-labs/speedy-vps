@@ -1,0 +1,25 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # Add ACME/Let's Encrypt config here for automatic SSL
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # Example App Service
+  # web:
+  #   image: "ghcr.io/your_org/{{ app_name }}:latest"
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.{{ app_name }}.rule=Host(`example.com`)"
+  #     - "traefik.http.routers.{{ app_name }}.entrypoints=websecure"
+  #     - "traefik.http.routers.{{ app_name }}.tls.certresolver=myresolver"

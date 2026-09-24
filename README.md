@@ -33,25 +33,33 @@ A fast, reusable Ansible setup to bootstrap and secure new VPS instances in minu
 
 ## Usage
 
+We use a `Makefile` to simplify running the Ansible playbooks.
+
 ### 1. Test Connection
 Verify that Ansible can communicate with the newly provisioned servers:
 ```bash
-ansible all -i inventory/production.ini -m ping
+make ping
 ```
 
 ### 2. Full Server Bootstrap
-To fully secure and provision all servers from scratch:
+To fully secure and provision all servers from scratch (it will prompt for your Ansible Vault password):
 ```bash
-ansible-playbook -i inventory/production.ini playbooks/site.yml --ask-vault-pass
+make setup-all
 ```
 
 ### 3. Target Specific Infrastructure
-If you are only provisioning a new app server (Docker host):
+If you are only provisioning or updating an app server (Docker host):
 ```bash
-ansible-playbook -i inventory/production.ini playbooks/setup_app.yml --ask-vault-pass
+make setup-app
 ```
 
-If you are only provisioning a new database server:
+If you are only provisioning or updating a database server:
 ```bash
-ansible-playbook -i inventory/production.ini playbooks/setup_db.yml --ask-vault-pass
+make setup-db
+```
+
+### 4. Edit Secrets
+To securely open and edit your Vault file:
+```bash
+make edit-vault
 ```

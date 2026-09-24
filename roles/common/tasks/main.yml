@@ -37,3 +37,46 @@
     regexp: '^#?PubkeyAuthentication'
     line: 'PubkeyAuthentication yes'
   notify: Restart SSH
+
+- name: Install unattended-upgrades
+  apt:
+    name: unattended-upgrades
+    state: present
+
+- name: Enable Unattended Upgrades
+  copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    mode: '0644'
+
+- name: Check if swap exists
+  command: swapon --show
+  register: swap_status
+  changed_when: false
+
+- name: Create 2GB swap file
+  command: fallocate -l 2G /swapfile
+  when: swap_status.stdout == ""
+
+- name: Set swap file permissions
+  file:
+    path: /swapfile
+    mode: '0600'
+  when: swap_status.stdout == ""
+
+- name: Format swap file
+  command: mkswap /swapfile
+  when: swap_status.stdout == ""
+
+- name: Enable swap
+  command: swapon /swapfile
+  when: swap_status.stdout == ""
+
+- name: Add swap to fstab
+  lineinfile:
+    path: /etc/fstab
+    line: '/swapfile none swap sw 0 0'
+    state: present
+  when: swap_status.stdout == ""

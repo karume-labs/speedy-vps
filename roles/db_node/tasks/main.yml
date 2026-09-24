@@ -8,5 +8,76 @@
   loop: "{{ groups['app_nodes'] | default([]) }}"
   when: hostvars[item]['ansible_host'] is defined
 
-# Add Postgres/MySQL installation tasks here
-# Add Backup script tasks here
+- name: Install PostgreSQL
+  apt:
+    name:
+      - postgresql
+      - postgresql-contrib
+      - python3-psycopg2 # Required for Ansible postgresql_user module
+    state: present
+
+- name: Ensure PostgreSQL is running
+  service:
+    name: postgresql
+    state: started
+    enabled: yes
+
+- name: Create application database
+  become_user: postgres
+  postgresql_db:
+    name: "{{ app_name }}"
+    state: present
+
+- name: Create database user
+  become_user: postgres
+  postgresql_user:
+    name: "{{ app_name }}"
+    password: "{{ db_password | default('change_me_in_vault') }}"
+    db: "{{ app_name }}"
+    priv: "ALL"
+    state: present
+
+- name: Find PostgreSQL config path
+  shell: find /etc/postgresql -name postgresql.conf
+  register: pg_conf_path
+  changed_when: false
+
+- name: Find pg_hba.conf path
+  shell: find /etc/postgresql -name pg_hba.conf
+  register: pg_hba_path
+  changed_when: false
+
+- name: Ensure PostgreSQL listens on all addresses
+  lineinfile:
+    path: "{{ pg_conf_path.stdout }}"
+    regexp: "^#?listen_addresses = '.*'"
+    line: "listen_addresses = '*'"
+  notify: Restart PostgreSQL
+
+- name: Allow App Nodes to authenticate in pg_hba.conf
+  lineinfile:
+    path: "{{ pg_hba_path.stdout }}"
+    line: "host    {{ app_name }}    {{ app_name }}    {{ hostvars[item]['ansible_host'] }}/32    scram-sha-256"
+    insertafter: EOF
+  loop: "{{ groups['app_nodes'] | default([]) }}"
+  when: hostvars[item]['ansible_host'] is defined
+  notify: Restart PostgreSQL
+
+- name: Create backup directory
+  file:
+    path: /root/backups
+    state: directory
+    mode: '0700'
+
+- name: Copy backup script
+  template:
+    src: db_backup.sh.j2
+    dest: /root/db_backup.sh
+    mode: '0700'
+
+- name: Schedule daily backup cron job
+  cron:
+    name: "Database Backup"
+    minute: "0"
+    hour: "2"
+    job: "/root/db_backup.sh >> /var/log/db_backup.log 2>&1"

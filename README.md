@@ -47,6 +47,9 @@ Update the IP addresses and server assignments in `inventory/production.ini`. Pl
     *Inside this file, you should define your database password, e.g.:*
     ```yaml
     db_password: "your_super_secret_password"
+    ghcr_user: "your_github_username"
+    ghcr_token: "your_github_personal_access_token"
+    acme_email: "you@example.com"
     ```
 
 ---

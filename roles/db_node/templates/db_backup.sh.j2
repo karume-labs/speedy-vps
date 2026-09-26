@@ -7,7 +7,8 @@ FILENAME="$BACKUP_DIR/{{ app_name }}_$TIMESTAMP.sql.gz"
 
 echo "Starting backup for {{ app_name }} at $(date)"
 
-sudo -u postgres pg_dump {{ app_name }} | gzip > "$FILENAME"
+# Uses --clean --if-exists so the backup can be smoothly restored without manual table drops
+sudo -u postgres pg_dump --clean --if-exists {{ app_name }} | gzip > "$FILENAME"
 
 # Delete backups older than 7 days
 find "$BACKUP_DIR" -type f -name "*.sql.gz" -mtime +7 -exec rm {} \;

@@ -23,3 +23,7 @@
     name: docker
     state: started
     enabled: yes
+
+- name: Log into GitHub Container Registry (Optional)
+  command: "docker login ghcr.io -u {{ ghcr_user }} -p {{ ghcr_token }}"
+  when: ghcr_user is defined and ghcr_token is defined

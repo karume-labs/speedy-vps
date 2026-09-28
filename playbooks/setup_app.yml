@@ -3,5 +3,6 @@
   hosts: app_nodes
   become: yes
   roles:
-    - ../roles/docker
-    - ../roles/app_node
+    - role: ../roles/docker
+      when: deployment_mode | default('docker') == 'docker'
+    - role: ../roles/app_node

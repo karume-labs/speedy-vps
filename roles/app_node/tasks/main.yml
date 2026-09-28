@@ -5,17 +5,22 @@
     state: directory
     mode: '0755'
 
+# -----------------------------------------------------
+# DOCKER DEPLOYMENT MODE
+# -----------------------------------------------------
 - name: Template dynamic docker-compose.yml with Traefik
   template:
     src: docker-compose.yml.j2
     dest: "/opt/apps/{{ app_name }}/docker-compose.yml"
     mode: '0644'
+  when: deployment_mode | default('docker') == 'docker'
 
 - name: Template environment variables
   template:
     src: .env.j2
     dest: "/opt/apps/{{ app_name }}/.env"
     mode: '0600'
+  when: deployment_mode | default('docker') == 'docker'
 
 - name: Allow HTTP through UFW
   ufw:
@@ -33,8 +38,75 @@
   command: docker compose pull
   args:
     chdir: "/opt/apps/{{ app_name }}"
+  when: deployment_mode | default('docker') == 'docker'
 
 - name: Start Docker Compose stack
   command: docker compose up -d --remove-orphans
   args:
     chdir: "/opt/apps/{{ app_name }}"
+  when: deployment_mode | default('docker') == 'docker'
+
+# -----------------------------------------------------
+# BARE METAL DEPLOYMENT MODE (Caddy, Node, PM2, Bun)
+# -----------------------------------------------------
+- name: Install Node.js and npm (Bare Metal)
+  apt:
+    name:
+      - nodejs
+      - npm
+    state: present
+    update_cache: yes
+  when: deployment_mode | default('docker') == 'bare_metal'
+
+- name: Install Bun and PM2 (Bare Metal)
+  npm:
+    name: "{{ item }}"
+    global: yes
+  loop:
+    - bun
+    - pm2
+  when: deployment_mode | default('docker') == 'bare_metal'
+
+- name: Install Caddy dependencies (Bare Metal)
+  apt:
+    name:
+      - debian-keyring
+      - debian-archive-keyring
+      - apt-transport-https
+      - curl
+    state: present
+  when: deployment_mode | default('docker') == 'bare_metal'
+
+- name: Add Caddy GPG key (Bare Metal)
+  shell: curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  args:
+    creates: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  when: deployment_mode | default('docker') == 'bare_metal'
+
+- name: Add Caddy repository (Bare Metal)
+  shell: curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+  args:
+    creates: /etc/apt/sources.list.d/caddy-stable.list
+  when: deployment_mode | default('docker') == 'bare_metal'
+
+- name: Install Caddy (Bare Metal)
+  apt:
+    name: caddy
+    state: present
+    update_cache: yes
+  when: deployment_mode | default('docker') == 'bare_metal'
+
+- name: Configure Caddyfile (Bare Metal)
+  copy:
+    dest: /etc/caddy/Caddyfile
+    content: |
+      {{ domain_name | default(ansible_host) }} {
+          reverse_proxy localhost:3000
+      }
+  when: deployment_mode | default('docker') == 'bare_metal'
+
+- name: Restart Caddy (Bare Metal)
+  service:
+    name: caddy
+    state: restarted
+  when: deployment_mode | default('docker') == 'bare_metal'

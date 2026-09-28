@@ -2,3 +2,8 @@
 .ansible/
 .DS_Store
 *.log
+
+# Ignore sensitive/app-specific configurations
+inventory/production.ini
+group_vars/all.yml
+group_vars/vault.yml

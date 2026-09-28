@@ -10,7 +10,7 @@ echo "Starting deployment of $APP_NAME..."
 
 # 1. Sync code to VPS
 echo "Syncing files to VPS..."
-rsync -avz --exclude node_modules --exclude .next --exclude .git ./ "$SERVER_ALIAS:/opt/apps/$APP_NAME/"
+rsync -avz --exclude node_modules --exclude .next --exclude .git --exclude .env.local ./ "$SERVER_ALIAS:/opt/apps/$APP_NAME/"
 
 # (Environment variables are automatically injected by Ansible during setup-all)
 
@@ -23,13 +23,11 @@ export CI=1
 cd /opt/apps/$APP_NAME
 bun install --ignore-scripts
 bun run build
-pm2 delete "$APP_NAME" || true
-# Use the following for Next.js Static Export:
-# pm2 start "npx serve@latest out -p 3000" --name '$APP_NAME'
-# Use the following for standard Next.js:
-pm2 start bun --name '$APP_NAME' -- run start
+# Use the following for Next.js Static Export (output: export):
+pm2 restart $APP_NAME 2>/dev/null || pm2 start "bunx serve@latest out -p 3000" --name '$APP_NAME'
+# Use the following for standard Next.js SSR (uncomment and replace above):
+# pm2 restart $APP_NAME 2>/dev/null || pm2 start bun --name '$APP_NAME' -- run start
 pm2 save
-pm2 startup
 EOF
 
 echo "Deployment complete! $APP_NAME is now live."

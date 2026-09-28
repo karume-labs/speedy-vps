@@ -87,6 +87,13 @@ To securely open and edit your Vault file later:
 make edit-vault
 ```
 
+### 5. Local Deployment (CI/CD Bypass)
+If you don't have a CI/CD pipeline set up yet, you can use the included `deploy-local.sh` script to build your Docker image locally, push it to your registry, and automatically update the server using Ansible.
+```bash
+./deploy-local.sh
+```
+*Note: The script intelligently auto-discovers your app name and prompts you for any missing paths, or you can configure it via environment variables (or a `.env.deploy` file).*
+
 ---
 
 ## Architecture Breakdown

@@ -1,0 +1,2 @@
+*.yml.example linguist-language=YAML
+*.ini.example linguist-language=INI

@@ -33,9 +33,15 @@
   postgresql_user:
     name: "{{ app_name }}"
     password: "{{ db_password | default('change_me_in_vault') }}"
-    db: "{{ app_name }}"
-    priv: "ALL"
     state: present
+
+- name: Grant database privileges
+  become_user: postgres
+  postgresql_privs:
+    db: "{{ app_name }}"
+    role: "{{ app_name }}"
+    privs: ALL
+    type: database
 
 - name: Find PostgreSQL config path
   shell: find /etc/postgresql -name postgresql.conf

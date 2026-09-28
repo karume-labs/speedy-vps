@@ -7,3 +7,6 @@
 inventory/production.ini
 group_vars/all.yml
 group_vars/vault.yml
+.vault_pass
+.env
+.env.*

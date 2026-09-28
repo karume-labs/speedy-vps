@@ -5,7 +5,6 @@ set -e
 # Configure these variables for your specific application
 APP_NAME="my-awesome-app"
 SERVER_ALIAS="my-app-server"
-DB_URL="postgres://user:pass@127.0.0.1:5432/db"
 
 echo "Starting deployment of $APP_NAME..."
 
@@ -13,9 +12,7 @@ echo "Starting deployment of $APP_NAME..."
 echo "Syncing files to VPS..."
 rsync -avz --exclude node_modules --exclude .next --exclude .git ./ "$SERVER_ALIAS:/opt/apps/$APP_NAME/"
 
-# 2. Setup environment variables securely over SSH
-echo "Configuring environment variables..."
-ssh "$SERVER_ALIAS" "echo 'DATABASE_URL=\"$DB_URL\"' > /opt/apps/$APP_NAME/.env.local"
+# (Environment variables are automatically injected by Ansible during setup-all)
 
 # 3. Install, Build, and Start PM2 Process (Next.js SSR example)
 echo "Building and restarting PM2 process..."

@@ -15,12 +15,11 @@
     mode: '0644'
   when: deployment_mode | default('docker') == 'docker'
 
-- name: Template environment variables
+- name: Template environment variables (Auto-injects secrets)
   template:
     src: .env.j2
     dest: "/opt/apps/{{ app_name }}/.env"
     mode: '0600'
-  when: deployment_mode | default('docker') == 'docker'
 
 - name: Allow HTTP through UFW
   ufw:

@@ -1,0 +1,11 @@
+---
+# Global variables
+
+# The name of your app (used for directories, DB names, etc.)
+app_name: "my-awesome-app"
+
+# Domain name or IP address for the web server to bind to
+domain_name: "YOUR_IP_ADDRESS"
+
+# Mode: 'bare_metal' (Caddy/Bun/PM2) or 'docker' (Traefik/Docker Compose)
+deployment_mode: "bare_metal"

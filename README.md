@@ -1,114 +1,79 @@
-# Speedy VPS Configuration
+# Speedy-VPS 🚀
 
-A lightning-fast, production-ready Ansible orchestration repository designed to bootstrap and secure new VPS instances (like Contabo, DigitalOcean, or Hetzner) in minutes.
+A lightning-fast, ultra-secure, and completely **decoupled** Ansible infrastructure engine. 
 
-This setup automatically splits your infrastructure into an Application Node and a Database Node. It supports a **Dual-Mode** deployment out of the box:
-1. **Dockerized Mode**: Uses Traefik auto-routing and Docker Compose.
-2. **Bare Metal Mode**: Directly installs Node.js, Bun, PM2, and Caddy (Zero-config SSL) for non-dockerized applications (e.g., standard Next.js apps).
+Speedy-VPS is designed to act as a centralized library of Ansible roles and playbooks. You **do not** place your app's configurations or secrets inside this repository. Instead, you copy the `template-infra/` folder into your specific application's codebase, and run the playbooks from there.
 
-Both modes include strict firewall rules, automated backups, and database lock-downs, perfectly mirroring a scalable web architecture.
+This guarantees that `speedy-vps` remains completely generic and stateless, while your apps track their own infrastructure definitions!
 
 ---
 
-## Features Included Out-of-the-Box
+## 🏗️ Architecture Modes
 
-*   **Security First**: Disables root password SSH login, configures `ufw` firewalls, and sets up `fail2ban`.
-*   **Stability**: Forces the `UTC` timezone, sets up automated `unattended-upgrades`, and automatically allocates a 2GB Swap file.
-*   **Dual-Mode App Node**: 
-    *   *(Bare Metal)*: Installs Caddy, PM2, Node.js, and Bun. 
-    *   *(Docker)*: Installs Docker Compose and Traefik for dynamic routing.
-*   **Database Lock-down**: Installs PostgreSQL, dynamically locks down `pg_hba.conf` so it only accepts connections from the App Node (or localhost if bare-metal), and generates automated backup scripts.
-*   **Automated Maintenance**: Configures a daily `cron` job for database backups and configures `logrotate` to prevent backup logs from eating up disk space.
+Speedy-VPS natively supports two deployment architectures. You select which one to use via the `deployment_mode` variable in your app's `group_vars/all.yml`.
+
+### 1. Bare Metal (`deployment_mode: "bare_metal"`)
+Perfect for Next.js, Node.js, and static sites. Installs everything directly onto the OS for maximum performance.
+- **Web Server:** Caddy (Auto-configures reverse proxy & HTTPS)
+- **Runtime:** Node.js 22.x & Bun
+- **Process Manager:** PM2 (Configured to survive server reboots)
+- **Database:** PostgreSQL (Secured, UFW restricted, daily auto-backups)
+- **Security:** UFW Firewall, Unattended Upgrades, SSH Key-only access.
+
+### 2. Docker (`deployment_mode: "docker"`)
+Perfect for complex microservices or containerized apps.
+- **Web Server:** Traefik (Auto-configures SSL via Let's Encrypt)
+- **Runtime:** Docker & Docker Compose v2
+- **Database:** PostgreSQL
+- **Security:** UFW Firewall, Unattended Upgrades, SSH Key-only access.
 
 ---
 
-## Prerequisites
+## 📖 Step-by-Step Usage Guide
 
-1.  **Ansible**: Install Ansible on your local machine.
-    *   Arch Linux: `sudo pacman -S ansible`
-    *   macOS: `brew install ansible`
-    *   Ubuntu/Debian: `sudo apt install ansible`
+Follow these exact steps to provision a server for a new application.
 
-## Setup Instructions
+### Step 1: Initialize your App's Infra Folder
+1. Inside your application's codebase (e.g., `townlink-limited/`), create a new folder called `infra/`.
+2. Copy the entire contents of `speedy-vps/template-infra/` into your new `infra/` folder.
+   ```bash
+   cp -r /path/to/speedy-vps/template-infra/* /path/to/your-app/infra/
+   ```
 
-### Step 1: Secure SSH Access
-Before Ansible can configure the server, establish secure, passwordless key-based authentication with your VPS as the `root` user.
-```bash
-ssh-copy-id root@<YOUR_VPS_IP>
+### Step 2: Configure the Inventory
+Open `infra/inventory/production.ini` and set your server's IP address, SSH user, and private key path.
+```ini
+[app_nodes]
+my-app-server ansible_host=123.45.67.89 ansible_user=root ansible_ssh_private_key_file=~/.ssh/your-key
 ```
 
-### Step 2: Configure Your Variables
-We provide `.example` files to prevent sensitive data from being accidentally committed to git.
+### Step 3: Configure Variables
+Open `infra/group_vars/all.yml` and define your app.
+```yaml
+app_name: "my-awesome-app"
+domain_name: "123.45.67.89" # Or your actual domain
+deployment_mode: "bare_metal" # Or "docker"
+```
 
-1. **Inventory**: 
-   Copy the inventory example and update it with your server's IP (or SSH alias):
-   ```bash
-   cp inventory/production.ini.example inventory/production.ini
-   ```
-   *(Place your App servers under `[app_nodes]` and your database servers under `[db_nodes]`. If they are the same server, place the IP in both).*
-
-2. **Global Variables**: 
-   Copy the variables example and configure your deployment mode:
-   ```bash
-   cp group_vars/all.yml.example group_vars/all.yml
-   ```
-   *Make sure to set `deployment_mode` to either `"bare_metal"` or `"docker"`.*
-
-3. **Vault (Secrets)**:
-   Create an encrypted Vault file to store your sensitive variables (like database passwords).
-   ```bash
-   ansible-vault create group_vars/vault.yml
-   ```
-   *Example contents:*
+### Step 4: Secure the Database Password
+Create an encrypted vault for your database password (or use a plaintext file locally if you prefer, as long as it is git-ignored).
+1. Generate a secure password: `openssl rand -base64 24`
+2. Save it in `infra/group_vars/vault.yml`:
    ```yaml
-   db_password: "your_super_secret_password"
-   
-   # If using Docker:
-   ghcr_user: "your_github_username"
-   ghcr_token: "your_github_personal_access_token"
-   acme_email: "you@example.com"
+   db_password: "YOUR_SECURE_PASSWORD"
    ```
+3. **CRITICAL:** Ensure `infra/.gitignore` ignores `.vault_pass` and `group_vars/vault.yml`.
 
----
-
-## Usage & Commands
-
-This project uses a `Makefile` to drastically simplify deployment.
-
-### 1. Test Connection
-Verify that Ansible can communicate with all the servers defined in your inventory:
+### Step 5: Provision the Server
+Navigate to your app's `infra/` folder in the terminal and execute the `Makefile`:
 ```bash
-make ping
-```
-
-### 2. Full Server Bootstrap (The Magic Button)
-To completely secure and provision all servers from scratch (it will ask for your Ansible Vault password):
-```bash
+cd /path/to/your-app/infra
 make setup-all
 ```
+*Note: Make sure the `SPEEDY_VPS_DIR` variable inside `infra/Makefile` correctly points to the relative path of the `speedy-vps` repository on your local machine.*
 
-### 3. Target Specific Infrastructure
-If you are only provisioning a new app server, or want to apply new Traefik/Caddy configurations:
-```bash
-make setup-app
-```
-
-If you are only provisioning or updating a database server:
-```bash
-make setup-db
-```
-
-### 4. Manage Secrets
-To securely open and edit your Vault file later:
-```bash
-make edit-vault
-```
-
----
-
-## Architecture Breakdown
-
-*   `roles/common/`: Runs on ALL servers. Hardens SSH, sets Timezone, configures UFW/fail2ban, sets up Swap memory, and enables Unattended Upgrades.
-*   `roles/docker/`: (Conditional) Runs on App Nodes only if `deployment_mode == 'docker'`. Installs the Docker daemon.
-*   `roles/app_node/`: Runs on App Nodes. Conditionally sets up either Traefik/Docker-Compose or Caddy/PM2/Bun based on your `deployment_mode`.
-*   `roles/db_node/`: Runs on DB Nodes. Installs PostgreSQL, configures user permissions, strictly limits connections to the App Node IP (or localhost), and generates the daily backup cron job.
+### Step 6: Deploy your Code!
+Inside the templates, you were provided a `deploy-baremetal.sh` file. 
+1. Move it to the root of your app (`mv infra/deploy-baremetal.sh ./deploy.sh`).
+2. Customize the `APP_NAME` and `SERVER_ALIAS` at the top of the script.
+3. Run `./deploy.sh` to Rsync your code, build it with Bun, and serve it via PM2!

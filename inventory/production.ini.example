@@ -1,5 +1,0 @@
-[app_nodes]
-# example-app ansible_host=192.168.1.10 ansible_user=root
-
-[db_nodes]
-# example-db ansible_host=192.168.1.10 ansible_user=root

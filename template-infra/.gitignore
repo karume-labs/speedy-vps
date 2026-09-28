@@ -1,0 +1,6 @@
+# Ignore secrets locally
+.vault_pass
+group_vars/vault.yml
+
+# Ignore the auto-downloaded speedy-vps engine cache
+.speedy-vps

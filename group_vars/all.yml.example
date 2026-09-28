@@ -1,5 +1,0 @@
----
-# Global variables
-app_name: "example-app"
-domain_name: "192.168.1.10"
-deployment_mode: "bare_metal" # Can be 'bare_metal' or 'docker'

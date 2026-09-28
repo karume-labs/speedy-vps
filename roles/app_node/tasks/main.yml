@@ -49,11 +49,13 @@
 # -----------------------------------------------------
 # BARE METAL DEPLOYMENT MODE (Caddy, Node, PM2, Bun)
 # -----------------------------------------------------
-- name: Install Node.js and npm (Bare Metal)
+- name: Add NodeSource repository for Node.js 22.x
+  shell: curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  when: deployment_mode | default('docker') == 'bare_metal'
+
+- name: Install Node.js (Bare Metal)
   apt:
-    name:
-      - nodejs
-      - npm
+    name: nodejs
     state: present
     update_cache: yes
   when: deployment_mode | default('docker') == 'bare_metal'

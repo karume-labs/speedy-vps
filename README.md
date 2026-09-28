@@ -1,188 +1,367 @@
 # Speedy-VPS
 
-A lightning-fast, ultra-secure, and completely **decoupled** Ansible infrastructure engine. 
+A lightning-fast, ultra-secure, and completely **decoupled** Ansible infrastructure engine.
 
-Speedy-VPS is designed to act as a centralized library of Ansible roles and playbooks. You **do not** place your app's configurations or secrets inside this repository. Instead, you copy the `template-infra/` folder into your specific application's codebase, and run the playbooks from there.
+Speedy-VPS is a stateless library of Ansible roles and playbooks. You **do not** place your app's configurations or secrets inside this repository. Instead, you copy the `template-infra/` folder into your specific application's codebase and run the playbooks from there.
 
-This guarantees that `speedy-vps` remains completely generic and stateless, while your apps track their own infrastructure definitions!
+This guarantees that `speedy-vps` remains completely generic and reusable across all your projects.
 
 ---
 
 ## Architecture Modes
 
-Speedy-VPS natively supports two deployment architectures. You select which one to use via the `deployment_mode` variable in your app's `group_vars/all.yml`.
+Two variables control how every component is deployed. They are independent of each other.
 
-### 1. Bare Metal (`deployment_mode: "bare_metal"`)
-Perfect for Next.js, Node.js, and static sites. Installs everything directly onto the OS for maximum performance.
-- **Web Server:** Caddy (Auto-configures reverse proxy & HTTPS)
-- **Runtime:** Node.js 22.x & Bun
-- **Process Manager:** PM2 (Configured to survive server reboots)
-- **Database:** PostgreSQL (Secured, UFW restricted, daily auto-backups)
-- **Security:** UFW Firewall, Unattended Upgrades, SSH Key-only access.
+**`deployment_mode`** — controls the App layer:
+- `bare_metal`: Installs Caddy, Node.js 22, Bun, and PM2 directly onto the OS.
+- `docker`: Installs Docker and Traefik. Your app runs in a container pulled from a registry.
 
-### 2. Docker (`deployment_mode: "docker"`)
-Perfect for complex microservices or containerized apps.
-- **Web Server:** Traefik (Auto-configures SSL via Let's Encrypt)
-- **Runtime:** Docker & Docker Compose v2
-- **Database:** PostgreSQL
-- **Security:** UFW Firewall, Unattended Upgrades, SSH Key-only access.
+**`db_deployment_mode`** — controls the Database layer:
+- `bare_metal`: Installs PostgreSQL directly onto the OS via `apt`.
+- `docker`: Spins up a PostgreSQL Docker container.
+
+See the [Topology Guide](#topology-guide) for all combinations.
 
 ---
 
-## Step-by-Step Usage Guide
+## Prerequisites
 
-Follow these exact steps to provision a server for a new application.
+Before starting, make sure you have the following installed on your local machine:
 
-### Step 1: Initialize your App's Infra Folder
-1. Inside your application's codebase (e.g., `townlink-limited/`), create a new folder called `infra/`.
-2. Copy the entire contents of `speedy-vps/template-infra/` into your new `infra/` folder.
-   ```bash
-   cp -r /path/to/speedy-vps/template-infra/* /path/to/your-app/infra/
-   ```
+- **Ansible** — `pip install ansible`
+- **make** — comes pre-installed on macOS/Linux
+- **rsync** — comes pre-installed on macOS/Linux; `apt install rsync` on Ubuntu
+- **An SSH key** with root access to your VPS already added to the server
 
-### Step 2: Configure the Inventory
-Open `infra/inventory/production.ini` and set your server's IP address, SSH user, and private key path.
+---
+
+## Setup Guide
+
+Follow these steps every time you want to deploy a new application.
+
+### Step 1: Copy the template into your app
+
+From within your application's root directory, clone the speedy-vps template:
+
+```bash
+# From your app's root directory
+git clone git@github.com:karume-labs/speedy-vps.git .speedy-vps-tmp
+cp -r .speedy-vps-tmp/template-infra ./infra
+rm -rf .speedy-vps-tmp
+```
+
+You will now have this structure inside your app:
+
+```
+your-app/
+  infra/
+    .gitignore
+    .github/
+      workflows/
+        deploy.yml          # CI/CD pipeline (optional)
+    inventory/
+      production.ini        # Server IP addresses & SSH config
+    group_vars/
+      all.yml               # App name, domain, deployment modes
+      vault.yml             # Secrets (gitignored, never committed)
+    Makefile                # Runs Ansible (auto-downloads the engine)
+    deploy-baremetal.sh     # Deploy script for bare metal apps
+    deploy-docker.sh        # Deploy script for Docker apps
+```
+
+### Step 2: Configure the server inventory
+
+Open `infra/inventory/production.ini`.
+
+This file tells Ansible which servers exist and how to connect to them. The `[app_nodes]` group receives your app. The `[db_nodes]` group receives the database.
+
+**Single server (app and DB on the same machine):**
 ```ini
 [app_nodes]
-my-app-server ansible_host=123.45.67.89 ansible_user=root ansible_ssh_private_key_file=~/.ssh/your-key
+my-app-server ansible_host=123.45.67.89 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa
+
+[db_nodes]
+my-app-server ansible_host=123.45.67.89 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa
 ```
 
-### Step 3: Configure Variables
-Open `infra/group_vars/all.yml` and define your app.
+**Two servers (app on one, DB on another):**
+```ini
+[app_nodes]
+my-app-server ansible_host=111.11.11.11 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa
+
+[db_nodes]
+my-db-server ansible_host=222.22.22.22 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa
+```
+
+> The alias on the left (e.g. `my-app-server`) must match the `SERVER_ALIAS` variable in your deploy script and your local `~/.ssh/config`.
+
+### Step 3: Configure app variables
+
+Open `infra/group_vars/all.yml` and fill in your values:
+
 ```yaml
+---
+# The name of your app. Used for:
+#   - The deployment directory: /opt/apps/<app_name>
+#   - The PostgreSQL database name and user
 app_name: "my-awesome-app"
-domain_name: "123.45.67.89" # Or your actual domain
-deployment_mode: "bare_metal" # Or "docker"
+
+# The domain name or IP address Caddy/Traefik will serve traffic on.
+# Use your IP address during initial testing, then switch to a real domain.
+domain_name: "123.45.67.89"
+
+# Deployment mode for the App layer ('bare_metal' or 'docker')
+deployment_mode: "bare_metal"
+
+# Deployment mode for the Database layer ('bare_metal' or 'docker')
+db_deployment_mode: "bare_metal"
 ```
 
-### Step 4: Secure the Database Password
-Create an encrypted vault for your database password (or use a plaintext file locally if you prefer, as long as it is git-ignored).
-1. Generate a secure password: `openssl rand -base64 24`
-2. Save it in `infra/group_vars/vault.yml`:
-   ```yaml
-   db_password: "YOUR_SECURE_PASSWORD"
-   ```
-3. **CRITICAL:** Ensure `infra/.gitignore` ignores `.vault_pass` and `group_vars/vault.yml`.
+### Step 4: Set the database password
 
-### Step 5: Provision the Server
-Navigate to your app's `infra/` folder in the terminal and execute the `Makefile`:
+Create the vault file at `infra/group_vars/vault.yml`. This file is already listed in `infra/.gitignore` and will never be committed.
+
+**Option A — Plaintext (simple local development):**
+
+Create the file manually:
+```yaml
+# infra/group_vars/vault.yml
+db_password: "your-super-secure-password"
+```
+
+**Option B — Ansible Vault (recommended for teams):**
+
 ```bash
-cd /path/to/your-app/infra
+# Generate a strong password
+openssl rand -base64 24
+
+# Create an encrypted vault file (you will be prompted for a vault password)
+cd infra/
+ansible-vault create group_vars/vault.yml
+```
+
+Inside the editor that opens, type:
+```yaml
+db_password: "your-super-secure-password"
+```
+
+If you use Ansible Vault, create `infra/.vault_pass` containing only your vault password (also gitignored), then add `--vault-password-file .vault_pass` to your Makefile's ansible-playbook command.
+
+> Ansible will automatically inject this password into `.env` on the server during provisioning. Your deploy scripts never handle secrets.
+
+### Step 5: Set up your local SSH config
+
+So that `rsync` and `ssh` commands in your deploy script can use the alias (e.g. `my-app-server`) instead of the raw IP, add an entry to `~/.ssh/config` on your local machine:
+
+```
+Host my-app-server
+  HostName 123.45.67.89
+  User root
+  IdentityFile ~/.ssh/id_rsa
+```
+
+Replace `my-app-server` with whatever alias you used in `production.ini`.
+
+### Step 6: Provision the server
+
+Navigate to your `infra/` folder and run:
+
+```bash
+cd infra/
 make setup-all
 ```
-*Note: Make sure the `SPEEDY_VPS_DIR` variable inside `infra/Makefile` correctly points to the relative path of the `speedy-vps` repository on your local machine.*
 
-### Step 6: Deploy your Code!
-Inside the templates, you were provided a `deploy-baremetal.sh` file. 
-1. Move it to the root of your app (`mv infra/deploy-baremetal.sh ./deploy.sh`).
-2. Customize the `APP_NAME` and `SERVER_ALIAS` at the top of the script.
-3. Run `./deploy.sh` to Rsync your code, build it with Bun, and serve it via PM2!
+The `Makefile` will automatically:
+1. Clone the `speedy-vps` engine from GitHub into a local `.speedy-vps/` cache (or pull updates if it already exists).
+2. Run the Ansible playbooks against your server.
+
+What Ansible installs depends on your `deployment_mode` and `db_deployment_mode` settings. After provisioning, the server will have:
+- A hardened firewall (UFW), fail2ban, and SSH key-only access
+- Your chosen web server (Caddy or Traefik) configured and running
+- PostgreSQL set up with a dedicated database and user for your app
+- A `.env` file at `/opt/apps/<app_name>/.env` pre-populated with your `DATABASE_URL`
+
+### Step 7: Configure and run your deploy script
+
+**For bare metal apps**, copy `deploy-baremetal.sh` to your app root and edit the variables at the top:
+
+```bash
+cp infra/deploy-baremetal.sh ./deploy.sh
+chmod +x deploy.sh
+```
+
+Open `deploy.sh` and set:
+```bash
+APP_NAME="my-awesome-app"   # Must match app_name in all.yml
+SERVER_ALIAS="my-app-server" # Must match your ~/.ssh/config Host alias
+```
+
+Then update the PM2 start command to match your framework:
+```bash
+# For standard Next.js (SSR):
+pm2 start bun --name '$APP_NAME' -- run start
+
+# For Next.js with output: export (static):
+pm2 start "npx serve@latest out -p 3000" --name '$APP_NAME'
+
+# For a plain Node/Bun server:
+pm2 start bun --name '$APP_NAME' -- run start
+```
+
+Run it:
+```bash
+./deploy.sh
+```
+
+**For Docker apps**, copy `deploy-docker.sh` to your app root and edit the variables:
+
+```bash
+cp infra/deploy-docker.sh ./deploy.sh
+chmod +x deploy.sh
+```
+
+Open `deploy.sh` and set:
+```bash
+APP_NAME="my-awesome-app"
+SERVER_ALIAS="my-app-server"
+IMAGE_NAME="ghcr.io/your-username/my-awesome-app:latest"
+```
+
+Run it:
+```bash
+./deploy.sh
+```
 
 ---
 
-## Speedy-VPS Topology Guide
+## Optional: Automated CI/CD with GitHub Actions
 
-The `speedy-vps` engine is incredibly flexible. By separating the App and the Database into distinct Ansible roles, you can orchestrate complex multi-server and hybrid deployments simply by tweaking two files in your `infra/` folder:
+The template includes a GitHub Actions workflow at `.github/workflows/deploy.yml` that automatically runs your `deploy.sh` every time you push to `main`.
 
-1. **`infra/inventory/production.ini`**: Controls *where* the apps and databases live (Same server vs Multiple servers).
-2. **`infra/group_vars/all.yml`**: Controls *how* they are installed (`bare_metal` vs `docker`).
+To activate it:
 
-Here is exactly how to configure the engine for 5 different topology cases.
+1. Copy the workflow file into your app's `.github/workflows/` folder:
+   ```bash
+   mkdir -p .github/workflows
+   cp infra/.github/workflows/deploy.yml .github/workflows/deploy.yml
+   ```
+
+2. Go to your GitHub repository → **Settings** → **Secrets and variables** → **Actions** and add two repository secrets:
+   - `SSH_PRIVATE_KEY` — the full contents of your private key file (e.g. `~/.ssh/id_rsa`)
+   - `SERVER_IP` — your VPS IP address
+
+3. Push to `main`. GitHub will handle the rest.
+
+---
+
+## Topology Guide
+
+The two variables in `group_vars/all.yml` combined with the two groups in `production.ini` cover every deployment topology.
 
 ### Case 1: All Bare Metal (Single Server)
-*Both the App and Database live on the same VPS, installed directly onto the OS for maximum raw performance.*
 
-**Inventory (`production.ini`)**
+Both app and database installed directly on the OS of one machine.
+
 ```ini
+# inventory/production.ini
 [app_nodes]
 serverA ansible_host=111.11.11.11 ansible_user=root
 
 [db_nodes]
 serverA ansible_host=111.11.11.11 ansible_user=root
 ```
-**Variables (`group_vars/all.yml`)**
 ```yaml
+# group_vars/all.yml
 deployment_mode: "bare_metal"
 db_deployment_mode: "bare_metal"
 ```
-*Result:* Caddy, PM2, Bun, and PostgreSQL (via apt) are all installed on `serverA`.
+
+*Installs: Caddy, Node.js 22, Bun, PM2, and PostgreSQL (via apt) all on `serverA`.*
 
 ---
 
 ### Case 2: All Docker (Single Server)
-*Both the App and Database live on the same VPS, but both run in isolated Docker containers.*
 
-**Inventory (`production.ini`)**
+Both app and database run in Docker containers on one machine.
+
 ```ini
+# inventory/production.ini
 [app_nodes]
 serverA ansible_host=111.11.11.11 ansible_user=root
 
 [db_nodes]
 serverA ansible_host=111.11.11.11 ansible_user=root
 ```
-**Variables (`group_vars/all.yml`)**
 ```yaml
+# group_vars/all.yml
 deployment_mode: "docker"
 db_deployment_mode: "docker"
 ```
-*Result:* Docker is installed on `serverA`. Traefik routes traffic to your App's Docker container, and a separate PostgreSQL Docker container spins up on the same machine.
+
+*Installs: Docker, Traefik, and a PostgreSQL container — all on `serverA`.*
 
 ---
 
 ### Case 3: Hybrid (Single Server)
-*The App runs via Docker (for easy CI/CD parity), but the Database is installed via Bare Metal (for native disk I/O performance).*
 
-**Inventory (`production.ini`)**
+App runs via Docker (good for CI/CD parity). Database installed natively for raw I/O performance.
+
 ```ini
+# inventory/production.ini
 [app_nodes]
 serverA ansible_host=111.11.11.11 ansible_user=root
 
 [db_nodes]
 serverA ansible_host=111.11.11.11 ansible_user=root
 ```
-**Variables (`group_vars/all.yml`)**
 ```yaml
+# group_vars/all.yml
 deployment_mode: "docker"
 db_deployment_mode: "bare_metal"
 ```
-*Result:* Docker and Traefik are installed on `serverA` for your App. PostgreSQL is installed directly onto Ubuntu via `apt` on the same machine.
+
+*Installs: Docker + Traefik for the app, PostgreSQL via apt for the database — on `serverA`.*
 
 ---
 
-### Case 4: All Docker (Multi-Server)
-*You scale out to two different servers. The App runs via Docker on Server A, and the Database runs via Docker on Server B.*
+### Case 4: All Docker (Two Servers)
 
-**Inventory (`production.ini`)**
+App and database on separate machines, both running via Docker.
+
 ```ini
+# inventory/production.ini
 [app_nodes]
 serverA ansible_host=111.11.11.11 ansible_user=root
 
 [db_nodes]
 serverB ansible_host=222.22.22.22 ansible_user=root
 ```
-**Variables (`group_vars/all.yml`)**
 ```yaml
+# group_vars/all.yml
 deployment_mode: "docker"
 db_deployment_mode: "docker"
 ```
-*Result:* Docker is installed on both machines. Server A only gets the App container and Traefik. Server B only gets the PostgreSQL container. Speedy-VPS automatically configures the database firewall to only accept connections from Server A's IP address.
+
+*Server A: Docker + Traefik + app container. Server B: Docker + PostgreSQL container. The database firewall is automatically locked to only accept connections from Server A's IP.*
 
 ---
 
-### Case 5: Hybrid (Multi-Server)
-*The most powerful setup: The App scales via Docker on Server A, but the Database runs natively on Bare Metal on a dedicated Server B for maximum I/O.*
+### Case 5: Hybrid (Two Servers)
 
-**Inventory (`production.ini`)**
+App on Server A via Docker. Database on dedicated Server B installed natively for maximum I/O.
+
 ```ini
+# inventory/production.ini
 [app_nodes]
 serverA ansible_host=111.11.11.11 ansible_user=root
 
 [db_nodes]
 serverB ansible_host=222.22.22.22 ansible_user=root
 ```
-**Variables (`group_vars/all.yml`)**
 ```yaml
+# group_vars/all.yml
 deployment_mode: "docker"
 db_deployment_mode: "bare_metal"
 ```
-*Result:* Server A gets Docker, Traefik, and your App container. Server B gets a purely native PostgreSQL `apt` installation with automatic daily cron backups. The firewall on Server B is automatically locked down to only accept port 5432 traffic from Server A.
+
+*Server A: Docker + Traefik + app container. Server B: Native PostgreSQL with daily cron backups. Firewall on Server B locked to Server A's IP only.*

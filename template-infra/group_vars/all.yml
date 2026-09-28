@@ -7,5 +7,8 @@ app_name: "my-awesome-app"
 # Domain name or IP address for the web server to bind to
 domain_name: "YOUR_IP_ADDRESS"
 
-# Mode: 'bare_metal' (Caddy/Bun/PM2) or 'docker' (Traefik/Docker Compose)
+# Deployment mode for the App layer ('bare_metal' or 'docker')
 deployment_mode: "bare_metal"
+
+# Deployment mode for the Database layer ('bare_metal' or 'docker')
+db_deployment_mode: "bare_metal"

@@ -1,110 +1,124 @@
----
 - name: Allow database port from App Nodes only
   ufw:
     rule: allow
     port: '5432'
     proto: tcp
-    src: "{{ hostvars[item]['ansible_host'] }}"
-  loop: "{{ groups['app_nodes'] | default([]) }}"
-  when: hostvars[item]['ansible_host'] is defined
-
+    src: '{{ hostvars[item][''ansible_host''] }}'
+  loop: '{{ groups[''app_nodes''] | default([]) }}'
+  when: (hostvars[item]['ansible_host'] is defined) and (db_deployment_mode | default('bare_metal')
+    == 'bare_metal')
 - name: Install PostgreSQL
   apt:
     name:
-      - postgresql
-      - postgresql-contrib
-      - python3-psycopg2 # Required for Ansible postgresql_user module
+    - postgresql
+    - postgresql-contrib
+    - python3-psycopg2
     state: present
-
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Ensure PostgreSQL is running
   service:
     name: postgresql
     state: started
-    enabled: yes
-
+    enabled: true
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Create application database
   become_user: postgres
   postgresql_db:
-    name: "{{ app_name }}"
+    name: '{{ app_name }}'
     state: present
-
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Create database user
   become_user: postgres
   postgresql_user:
-    name: "{{ app_name }}"
-    password: "{{ db_password | default('change_me_in_vault') }}"
+    name: '{{ app_name }}'
+    password: '{{ db_password | default(''change_me_in_vault'') }}'
     state: present
-
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Grant database privileges
   become_user: postgres
   postgresql_privs:
-    db: "{{ app_name }}"
-    role: "{{ app_name }}"
+    db: '{{ app_name }}'
+    role: '{{ app_name }}'
     privs: ALL
     type: database
-
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Find PostgreSQL config path
   shell: find /etc/postgresql -name postgresql.conf
   register: pg_conf_path
   changed_when: false
-
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Find pg_hba.conf path
   shell: find /etc/postgresql -name pg_hba.conf
   register: pg_hba_path
   changed_when: false
-
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Ensure PostgreSQL listens on all addresses
   lineinfile:
-    path: "{{ pg_conf_path.stdout }}"
-    regexp: "^#?listen_addresses = '.*'"
-    line: "listen_addresses = '*'"
+    path: '{{ pg_conf_path.stdout }}'
+    regexp: ^#?listen_addresses = '.*'
+    line: listen_addresses = '*'
   notify: Restart PostgreSQL
-
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Allow App Nodes to authenticate in pg_hba.conf
   lineinfile:
-    path: "{{ pg_hba_path.stdout }}"
-    line: "host    {{ app_name }}    {{ app_name }}    {{ hostvars[item]['ansible_host'] }}/32    scram-sha-256"
+    path: '{{ pg_hba_path.stdout }}'
+    line: host    {{ app_name }}    {{ app_name }}    {{ hostvars[item]['ansible_host']
+      }}/32    scram-sha-256
     insertafter: EOF
-  loop: "{{ groups['app_nodes'] | default([]) }}"
-  when: hostvars[item]['ansible_host'] is defined
+  loop: '{{ groups[''app_nodes''] | default([]) }}'
+  when: (hostvars[item]['ansible_host'] is defined) and (db_deployment_mode | default('bare_metal')
+    == 'bare_metal')
   notify: Restart PostgreSQL
-
 - name: Create backup directory
   file:
     path: /root/backups
     state: directory
     mode: '0700'
-
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Copy backup script
   template:
     src: db_backup.sh.j2
     dest: /root/db_backup.sh
     mode: '0700'
-
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Copy restore script
   template:
     src: db_restore.sh.j2
     dest: /root/db_restore.sh
     mode: '0700'
-
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Schedule daily backup cron job
   cron:
-    name: "Database Backup"
-    minute: "0"
-    hour: "2"
-    job: "/root/db_backup.sh >> /var/log/db_backup.log 2>&1"
-
+    name: Database Backup
+    minute: '0'
+    hour: '2'
+    job: /root/db_backup.sh >> /var/log/db_backup.log 2>&1
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
 - name: Configure log rotation for database backups
   copy:
     dest: /etc/logrotate.d/db_backup
-    content: |
-      /var/log/db_backup.log {
-          weekly
-          rotate 4
-          compress
-          delaycompress
-          missingok
-          notifempty
-          create 640 root root
-      }
+    content: "/var/log/db_backup.log {\n    weekly\n    rotate 4\n    compress\n \
+      \   delaycompress\n    missingok\n    notifempty\n    create 640 root root\n\
+      }\n"
     mode: '0644'
+  when: db_deployment_mode | default('bare_metal') == 'bare_metal'
+- name: Create DB directory for Docker
+  file:
+    path: /opt/apps/{{ app_name }}_db
+    state: directory
+    mode: '0755'
+  when: db_deployment_mode | default('bare_metal') == 'docker'
+- name: Template DB docker-compose.yml
+  copy:
+    dest: /opt/apps/{{ app_name }}_db/docker-compose.yml
+    content: "services:\n  db:\n    image: postgres:15\n    restart: always\n    environment:\n\
+      \      POSTGRES_USER: \"{{ app_name }}\"\n      POSTGRES_PASSWORD: \"{{ db_password\
+      \ | default('change_me_in_vault') }}\"\n      POSTGRES_DB: \"{{ app_name }}\"\
+      \n    ports:\n      - \"5432:5432\"\n    volumes:\n      - pgdata:/var/lib/postgresql/data\n\
+      volumes:\n  pgdata:\n"
+  when: db_deployment_mode | default('bare_metal') == 'docker'
+- name: Start Postgres Docker Compose
+  command: docker compose up -d
+  args:
+    chdir: /opt/apps/{{ app_name }}_db
+  when: db_deployment_mode | default('bare_metal') == 'docker'

@@ -1,86 +1,117 @@
----
 - name: Set timezone to UTC
   timezone:
     name: UTC
-
 - name: Update apt cache and upgrade packages
   apt:
-    update_cache: yes
-    upgrade: yes
-
+    update_cache: true
+    upgrade: true
 - name: Install essential packages
   apt:
     name:
-      - curl
-      - git
-      - htop
-      - ufw
-      - fail2ban
+    - curl
+    - git
+    - htop
+    - ufw
+    - fail2ban
     state: present
-
 - name: Allow SSH through UFW
   ufw:
     rule: allow
     name: OpenSSH
-
 - name: Enable UFW
   ufw:
     state: enabled
     policy: deny
-
 - name: Disable root password authentication
   lineinfile:
     path: /etc/ssh/sshd_config
-    regexp: '^#?PasswordAuthentication'
-    line: 'PasswordAuthentication no'
+    regexp: ^#?PasswordAuthentication
+    line: PasswordAuthentication no
   notify: Restart SSH
-
 - name: Ensure SSH key login is enabled
   lineinfile:
     path: /etc/ssh/sshd_config
-    regexp: '^#?PubkeyAuthentication'
-    line: 'PubkeyAuthentication yes'
+    regexp: ^#?PubkeyAuthentication
+    line: PubkeyAuthentication yes
   notify: Restart SSH
-
 - name: Install unattended-upgrades
   apt:
     name: unattended-upgrades
     state: present
-
 - name: Enable Unattended Upgrades
   copy:
     dest: /etc/apt/apt.conf.d/20auto-upgrades
-    content: |
-      APT::Periodic::Update-Package-Lists "1";
-      APT::Periodic::Unattended-Upgrade "1";
-    mode: '0644'
+    content: 'APT::Periodic::Update-Package-Lists "1";
 
+      APT::Periodic::Unattended-Upgrade "1";
+
+      '
+    mode: '0644'
 - name: Check if swap exists
   command: swapon --show
   register: swap_status
   changed_when: false
-
 - name: Create 2GB swap file
   command: fallocate -l 2G /swapfile
   when: swap_status.stdout == ""
-
 - name: Set swap file permissions
   file:
     path: /swapfile
     mode: '0600'
   when: swap_status.stdout == ""
-
 - name: Format swap file
   command: mkswap /swapfile
   when: swap_status.stdout == ""
-
 - name: Enable swap
   command: swapon /swapfile
   when: swap_status.stdout == ""
-
 - name: Add swap to fstab
   lineinfile:
     path: /etc/fstab
-    line: '/swapfile none swap sw 0 0'
+    line: /swapfile none swap sw 0 0
     state: present
   when: swap_status.stdout == ""
+- name: Install Docker dependencies
+  apt:
+    name:
+    - apt-transport-https
+    - ca-certificates
+    - curl
+    - software-properties-common
+    state: present
+    update_cache: true
+  when: deployment_mode | default('bare_metal') == 'docker' or db_deployment_mode
+    | default('bare_metal') == 'docker'
+- name: Add Docker GPG key
+  shell: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor
+    -o /usr/share/keyrings/docker-archive-keyring.gpg
+  args:
+    creates: /usr/share/keyrings/docker-archive-keyring.gpg
+  when: deployment_mode | default('bare_metal') == 'docker' or db_deployment_mode
+    | default('bare_metal') == 'docker'
+- name: Add Docker APT repository
+  shell: echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg]
+    https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee
+    /etc/apt/sources.list.d/docker.list > /dev/null
+  args:
+    creates: /etc/apt/sources.list.d/docker.list
+  when: deployment_mode | default('bare_metal') == 'docker' or db_deployment_mode
+    | default('bare_metal') == 'docker'
+- name: Install Docker CE
+  apt:
+    name:
+    - docker-ce
+    - docker-ce-cli
+    - containerd.io
+    - docker-compose-plugin
+    state: present
+    update_cache: true
+  when: deployment_mode | default('bare_metal') == 'docker' or db_deployment_mode
+    | default('bare_metal') == 'docker'
+- name: Ensure Docker is running
+  service:
+    name: docker
+    state: started
+    enabled: true
+  when: deployment_mode | default('bare_metal') == 'docker' or db_deployment_mode
+    | default('bare_metal') == 'docker'

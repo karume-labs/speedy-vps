@@ -1,4 +1,4 @@
-# Speedy-VPS 🚀
+# Speedy-VPS
 
 A lightning-fast, ultra-secure, and completely **decoupled** Ansible infrastructure engine. 
 
@@ -8,7 +8,7 @@ This guarantees that `speedy-vps` remains completely generic and stateless, whil
 
 ---
 
-## 🏗️ Architecture Modes
+## Architecture Modes
 
 Speedy-VPS natively supports two deployment architectures. You select which one to use via the `deployment_mode` variable in your app's `group_vars/all.yml`.
 
@@ -29,7 +29,7 @@ Perfect for complex microservices or containerized apps.
 
 ---
 
-## 📖 Step-by-Step Usage Guide
+## Step-by-Step Usage Guide
 
 Follow these exact steps to provision a server for a new application.
 
@@ -77,3 +77,112 @@ Inside the templates, you were provided a `deploy-baremetal.sh` file.
 1. Move it to the root of your app (`mv infra/deploy-baremetal.sh ./deploy.sh`).
 2. Customize the `APP_NAME` and `SERVER_ALIAS` at the top of the script.
 3. Run `./deploy.sh` to Rsync your code, build it with Bun, and serve it via PM2!
+
+---
+
+## Speedy-VPS Topology Guide
+
+The `speedy-vps` engine is incredibly flexible. By separating the App and the Database into distinct Ansible roles, you can orchestrate complex multi-server and hybrid deployments simply by tweaking two files in your `infra/` folder:
+
+1. **`infra/inventory/production.ini`**: Controls *where* the apps and databases live (Same server vs Multiple servers).
+2. **`infra/group_vars/all.yml`**: Controls *how* they are installed (`bare_metal` vs `docker`).
+
+Here is exactly how to configure the engine for 5 different topology cases.
+
+### Case 1: All Bare Metal (Single Server)
+*Both the App and Database live on the same VPS, installed directly onto the OS for maximum raw performance.*
+
+**Inventory (`production.ini`)**
+```ini
+[app_nodes]
+serverA ansible_host=111.11.11.11 ansible_user=root
+
+[db_nodes]
+serverA ansible_host=111.11.11.11 ansible_user=root
+```
+**Variables (`group_vars/all.yml`)**
+```yaml
+deployment_mode: "bare_metal"
+db_deployment_mode: "bare_metal"
+```
+*Result:* Caddy, PM2, Bun, and PostgreSQL (via apt) are all installed on `serverA`.
+
+---
+
+### Case 2: All Docker (Single Server)
+*Both the App and Database live on the same VPS, but both run in isolated Docker containers.*
+
+**Inventory (`production.ini`)**
+```ini
+[app_nodes]
+serverA ansible_host=111.11.11.11 ansible_user=root
+
+[db_nodes]
+serverA ansible_host=111.11.11.11 ansible_user=root
+```
+**Variables (`group_vars/all.yml`)**
+```yaml
+deployment_mode: "docker"
+db_deployment_mode: "docker"
+```
+*Result:* Docker is installed on `serverA`. Traefik routes traffic to your App's Docker container, and a separate PostgreSQL Docker container spins up on the same machine.
+
+---
+
+### Case 3: Hybrid (Single Server)
+*The App runs via Docker (for easy CI/CD parity), but the Database is installed via Bare Metal (for native disk I/O performance).*
+
+**Inventory (`production.ini`)**
+```ini
+[app_nodes]
+serverA ansible_host=111.11.11.11 ansible_user=root
+
+[db_nodes]
+serverA ansible_host=111.11.11.11 ansible_user=root
+```
+**Variables (`group_vars/all.yml`)**
+```yaml
+deployment_mode: "docker"
+db_deployment_mode: "bare_metal"
+```
+*Result:* Docker and Traefik are installed on `serverA` for your App. PostgreSQL is installed directly onto Ubuntu via `apt` on the same machine.
+
+---
+
+### Case 4: All Docker (Multi-Server)
+*You scale out to two different servers. The App runs via Docker on Server A, and the Database runs via Docker on Server B.*
+
+**Inventory (`production.ini`)**
+```ini
+[app_nodes]
+serverA ansible_host=111.11.11.11 ansible_user=root
+
+[db_nodes]
+serverB ansible_host=222.22.22.22 ansible_user=root
+```
+**Variables (`group_vars/all.yml`)**
+```yaml
+deployment_mode: "docker"
+db_deployment_mode: "docker"
+```
+*Result:* Docker is installed on both machines. Server A only gets the App container and Traefik. Server B only gets the PostgreSQL container. Speedy-VPS automatically configures the database firewall to only accept connections from Server A's IP address.
+
+---
+
+### Case 5: Hybrid (Multi-Server)
+*The most powerful setup: The App scales via Docker on Server A, but the Database runs natively on Bare Metal on a dedicated Server B for maximum I/O.*
+
+**Inventory (`production.ini`)**
+```ini
+[app_nodes]
+serverA ansible_host=111.11.11.11 ansible_user=root
+
+[db_nodes]
+serverB ansible_host=222.22.22.22 ansible_user=root
+```
+**Variables (`group_vars/all.yml`)**
+```yaml
+deployment_mode: "docker"
+db_deployment_mode: "bare_metal"
+```
+*Result:* Server A gets Docker, Traefik, and your App container. Server B gets a purely native PostgreSQL `apt` installation with automatic daily cron backups. The firewall on Server B is automatically locked down to only accept port 5432 traffic from Server A.
